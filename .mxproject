@@ -1,7 +1,7 @@
 [PreviousGenFiles]
-HeaderPath=C:/Users/salim/Documents/St code/F1_AD9833/Inc
+HeaderPath=C:/Users/salim/Documents/St code/F1_AD9833_FM_Transmit/Inc
 HeaderFiles=stm32f1xx_it.h;stm32f1xx_hal_conf.h;main.h;usb_device.h;usbd_conf.h;usbd_desc.h;usbd_cdc_if.h;
-SourcePath=C:/Users/salim/Documents/St code/F1_AD9833/Src
+SourcePath=C:/Users/salim/Documents/St code/F1_AD9833_FM_Transmit/Src
 SourceFiles=stm32f1xx_it.c;stm32f1xx_hal_msp.c;main.c;usb_device.c;usbd_conf.c;usbd_desc.c;usbd_cdc_if.c;
 
 [PreviousLibFiles]

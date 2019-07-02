@@ -45,6 +45,7 @@
 ADC_HandleTypeDef hadc1;
 
 SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_tx;
 
 /* USER CODE BEGIN PV */
 
@@ -53,6 +54,7 @@ SPI_HandleTypeDef hspi1;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
@@ -64,9 +66,17 @@ static void MX_ADC1_Init(void);
 void AD9833_tx(SPI_HandleTypeDef *hspi, uint16_t dt) {
 	static uint16_t data[1] = { 0 };
 	data[0] = dt;
-	HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 0);
+	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 0);
 	HAL_SPI_Transmit(hspi, &data[0], 1, HAL_MAX_DELAY);
-	HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
+	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
+}
+
+void AD9833_tx_DMA(SPI_HandleTypeDef *hspi, uint16_t dt) {
+	static uint16_t data[1] = { 0 };
+	data[0] = dt;
+	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 0);
+	HAL_SPI_Transmit(hspi, &data[0], 1, HAL_MAX_DELAY);
+	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
 }
 
 void AD9833_Init(SPI_HandleTypeDef *hspi) {
@@ -87,9 +97,6 @@ uint64_t AD9833_freq_calc(double freq, uint64_t clk) {
 void AD9833_set(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 		uint8_t reset) {
 
-	if (reset)
-		AD9833_Init(hspi);
-
 	static uint16_t fq1maskand = 0b0011111111111111;
 	static uint16_t fq1maskor = 0b0100000000000000;
 	static uint16_t ph1maskand = 0b1101111111111111;
@@ -103,6 +110,9 @@ void AD9833_set(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 	static uint64_t FreqReg;
 	static uint16_t PhReg;
 	const uint64_t fmclk = 25000000;
+
+	if (reset)
+		AD9833_Init(hspi);
 
 	//FreqReg = (freq << 28) / fmclk;
 	FreqReg = AD9833_freq_calc(freq, fmclk);
@@ -125,6 +135,69 @@ void AD9833_set(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 	AD9833_tx(hspi, PhReg);
 	if (reset)
 		AD9833_tx(hspi, 0x2000);
+}
+
+void AD9833_set_DMA(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
+		uint8_t reset) {
+
+	static uint16_t fq1maskand = 0b0011111111111111;
+	static uint16_t fq1maskor = 0b0100000000000000;
+	static uint16_t ph1maskand = 0b1101111111111111;
+	static uint16_t ph1markor = 0b1100000000000000;
+	static uint16_t ftmask = 0b0011111111111111;
+	static uint16_t twmask = 0b0000111111111111;
+
+	static uint16_t fqlsb;
+	static uint16_t fqmsb;
+
+	static uint64_t FreqReg;
+	static uint16_t PhReg;
+	const uint64_t fmclk = 25000000;
+	static uint16_t Tx_Buff[5] = {0, 0, 0, 0, 0};
+
+	static uint8_t i;
+
+	i = 0;
+
+	if (reset)
+	{
+		Tx_Buff[i] = 0x2100;
+		i++;
+	}
+
+	//FreqReg = (freq << 28) / fmclk;
+	FreqReg = AD9833_freq_calc(freq, fmclk);
+	fqlsb = FreqReg & ftmask;
+	fqmsb = (FreqReg >> 14) & ftmask;
+
+	fqlsb = fq1maskand & fqlsb;
+	fqlsb = fq1maskor | fqlsb;
+	fqmsb = fq1maskand & fqmsb;
+	fqmsb = fq1maskor | fqmsb;
+
+	PhReg = (phase * 2 * M_PI) / 4096;
+	PhReg &= twmask;
+
+	PhReg &= ph1maskand;
+	PhReg |= ph1markor;
+
+	//AD9833_tx(hspi, fqlsb);
+	//AD9833_tx(hspi, fqmsb);
+	//AD9833_tx(hspi, PhReg);
+
+	Tx_Buff[i] = fqlsb;
+	i++;
+	Tx_Buff[i] = fqmsb;
+	i++;
+	Tx_Buff[i] = PhReg;
+	i++;
+
+	if (reset)
+	{
+		Tx_Buff[i] = 0x2000;
+		i++;
+	}
+	HAL_SPI_Transmit_DMA(hspi, Tx_Buff, i);
 }
 
 /* USER CODE END 0 */
@@ -156,13 +229,14 @@ int main(void) {
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
+	MX_DMA_Init();
 	MX_SPI1_Init();
 	MX_ADC1_Init();
 	/* USER CODE BEGIN 2 */
-	HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
+	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
 	HAL_ADC_Start(&hadc1);
-	AD9833_set(&hspi1, 40.0, 0, 1);
-	AD9833_set(&hspi1, 40.0, 0, 1);
+	AD9833_set_DMA(&hspi1, 40.0, 0, 1);
+	AD9833_set_DMA(&hspi1, 40.0, 0, 1);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -172,7 +246,7 @@ int main(void) {
 		adc = HAL_ADC_GetValue(&hadc1);
 		adc *= 2;
 		adc = adc + 1000000;
-		AD9833_set(&hspi1, adc, 0, 0);
+		AD9833_set_DMA(&hspi1, adc, 0, 0);
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
@@ -273,8 +347,8 @@ static void MX_SPI1_Init(void) {
 	hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
 	hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
 	hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-	hspi1.Init.NSS = SPI_NSS_SOFT;
-	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+	hspi1.Init.NSS = SPI_NSS_HARD_OUTPUT;
+	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
 	hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
 	hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
 	hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -285,6 +359,21 @@ static void MX_SPI1_Init(void) {
 	/* USER CODE BEGIN SPI1_Init 2 */
 
 	/* USER CODE END SPI1_Init 2 */
+
+}
+
+/** 
+ * Enable DMA controller clock
+ */
+static void MX_DMA_Init(void) {
+	/* DMA controller clock enable */
+	__HAL_RCC_DMA1_CLK_ENABLE()
+	;
+
+	/* DMA interrupt init */
+	/* DMA1_Channel3_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }
 
@@ -307,22 +396,12 @@ static void MX_GPIO_Init(void) {
 	/*Configure GPIO pin Output Level */
 	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 
-	/*Configure GPIO pin Output Level */
-	HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
-
 	/*Configure GPIO pin : LED_Pin */
 	GPIO_InitStruct.Pin = LED_Pin;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : CS_Pin */
-	GPIO_InitStruct.Pin = CS_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(CS_GPIO_Port, &GPIO_InitStruct);
 
 }
 
