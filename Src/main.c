@@ -71,14 +71,6 @@ void AD9833_tx(SPI_HandleTypeDef *hspi, uint16_t dt) {
 	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
 }
 
-void AD9833_tx_DMA(SPI_HandleTypeDef *hspi, uint16_t dt) {
-	static uint16_t data[1] = { 0 };
-	data[0] = dt;
-	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 0);
-	HAL_SPI_Transmit(hspi, &data[0], 1, HAL_MAX_DELAY);
-	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
-}
-
 void AD9833_Init(SPI_HandleTypeDef *hspi) {
 	uint16_t data;
 	data = 0x21 << 8;
@@ -153,14 +145,13 @@ void AD9833_set_DMA(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 	static uint64_t FreqReg;
 	static uint16_t PhReg;
 	const uint64_t fmclk = 25000000;
-	static uint16_t Tx_Buff[5] = {0, 0, 0, 0, 0};
+	static uint16_t Tx_Buff[5] = { 0, 0, 0, 0, 0 };
 
 	static uint8_t i;
 
 	i = 0;
 
-	if (reset)
-	{
+	if (reset) {
 		Tx_Buff[i] = 0x2100;
 		i++;
 	}
@@ -191,13 +182,24 @@ void AD9833_set_DMA(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 	i++;
 	Tx_Buff[i] = PhReg;
 	i++;
+	//Tx_Buff[i] = 0xC000;
+	//i++;
 
-	if (reset)
-	{
+	if (reset) {
 		Tx_Buff[i] = 0x2000;
 		i++;
 	}
 	HAL_SPI_Transmit_DMA(hspi, Tx_Buff, i);
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+	static uint32_t adc;
+	HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+	if (hadc->Instance == ADC1) {
+		adc *= 2;
+		adc = adc + 1000000;
+		AD9833_set_DMA(&hspi1, adc, 0, 0);
+	}
 }
 
 /* USER CODE END 0 */
@@ -209,7 +211,7 @@ void AD9833_set_DMA(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	uint32_t adc;
+
   /* USER CODE END 1 */
   
 
@@ -236,7 +238,7 @@ int main(void)
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
-	HAL_ADC_Start(&hadc1);
+	HAL_ADC_Start_IT(&hadc1);
 	AD9833_set_DMA(&hspi1, 40.0, 0, 1);
 	AD9833_set_DMA(&hspi1, 40.0, 0, 1);
   /* USER CODE END 2 */
@@ -244,11 +246,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
-		HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-		adc = HAL_ADC_GetValue(&hadc1);
-		adc *= 3;
-		adc = adc + 1000000;
-		AD9833_set_DMA(&hspi1, adc, 0, 0);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -312,6 +310,8 @@ static void MX_ADC1_Init(void)
 
   /* USER CODE END ADC1_Init 0 */
 
+  ADC_ChannelConfTypeDef sConfig = {0};
+
   /* USER CODE BEGIN ADC1_Init 1 */
 
   /* USER CODE END ADC1_Init 1 */
@@ -325,6 +325,15 @@ static void MX_ADC1_Init(void)
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Regular Channel 
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
   }
@@ -402,7 +411,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : LED_Pin */
   GPIO_InitStruct.Pin = LED_Pin;
