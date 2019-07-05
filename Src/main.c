@@ -194,12 +194,13 @@ void AD9833_set_DMA(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	static uint32_t adc;
-	HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 	if (hadc->Instance == ADC1) {
+		adc = HAL_ADC_GetValue(hadc);
 		adc *= 2;
-		adc = adc + 1000000;
+		adc = adc + 3500000;
 		AD9833_set_DMA(&hspi1, adc, 0, 0);
 	}
+	HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 }
 
 /* USER CODE END 0 */
@@ -238,9 +239,10 @@ int main(void)
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 	//HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, 1);
+	AD9833_set_DMA(&hspi1, 50.0, 0, 1);
+	HAL_Delay(1);
+	AD9833_set_DMA(&hspi1, 50.0, 0, 1);
 	HAL_ADC_Start_IT(&hadc1);
-	AD9833_set_DMA(&hspi1, 40.0, 0, 1);
-	AD9833_set_DMA(&hspi1, 40.0, 0, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
