@@ -119,7 +119,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
     hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;
     hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
     hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
-    hdma_adc1.Init.Mode = DMA_NORMAL;
+    hdma_adc1.Init.Mode = DMA_CIRCULAR;
     hdma_adc1.Init.Priority = DMA_PRIORITY_VERY_HIGH;
     if (HAL_DMA_Init(&hdma_adc1) != HAL_OK)
     {
@@ -192,11 +192,17 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     /**SPI1 GPIO Configuration    
     PA4     ------> SPI1_NSS
     PA5     ------> SPI1_SCK
+    PA6     ------> SPI1_MISO
     PA7     ------> SPI1_MOSI 
     */
     GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_7;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_6;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* SPI1 DMA Init */
@@ -207,7 +213,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     hdma_spi1_tx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_spi1_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
     hdma_spi1_tx.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
-    hdma_spi1_tx.Init.Mode = DMA_NORMAL;
+    hdma_spi1_tx.Init.Mode = DMA_CIRCULAR;
     hdma_spi1_tx.Init.Priority = DMA_PRIORITY_VERY_HIGH;
     if (HAL_DMA_Init(&hdma_spi1_tx) != HAL_OK)
     {
@@ -216,6 +222,9 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
 
     __HAL_LINKDMA(hspi,hdmatx,hdma_spi1_tx);
 
+    /* SPI1 interrupt Init */
+    HAL_NVIC_SetPriority(SPI1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(SPI1_IRQn);
   /* USER CODE BEGIN SPI1_MspInit 1 */
 
   /* USER CODE END SPI1_MspInit 1 */
@@ -242,12 +251,16 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* hspi)
     /**SPI1 GPIO Configuration    
     PA4     ------> SPI1_NSS
     PA5     ------> SPI1_SCK
+    PA6     ------> SPI1_MISO
     PA7     ------> SPI1_MOSI 
     */
-    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_7);
+    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7);
 
     /* SPI1 DMA DeInit */
     HAL_DMA_DeInit(hspi->hdmatx);
+
+    /* SPI1 interrupt DeInit */
+    HAL_NVIC_DisableIRQ(SPI1_IRQn);
   /* USER CODE BEGIN SPI1_MspDeInit 1 */
 
   /* USER CODE END SPI1_MspDeInit 1 */
