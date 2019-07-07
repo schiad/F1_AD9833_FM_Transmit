@@ -38,7 +38,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-uint16_t ADVBUFF[BUFF];
+static uint16_t ADCBUFF[BUFF];
+static uint16_t SPI_Buff[2 * BUFF];
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -196,15 +197,66 @@ void AD9833_set_DMA(SPI_HandleTypeDef *hspi, double freq, uint16_t phase,
 	HAL_SPI_Transmit_DMA(hspi, Tx_Buff, i);
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	static uint32_t adc;
-	if (hadc->Instance == ADC1) {
-		adc = HAL_ADC_GetValue(hadc);
-		adc *= 1;
-		adc = adc + 0;
-		AD9833_set_DMA(&hspi1, adc, 0, 0);
+void AD9833_set_DMA_reg(double freq, uint16_t *Tx_Buff) {
+
+	static uint16_t fq1maskand = 0b0011111111111111;
+	static uint16_t fq1maskor = 0b0100000000000000;
+	static uint16_t ftmask = 0b0011111111111111;
+
+	static uint16_t fqlsb;
+	static uint16_t fqmsb;
+	static uint64_t FreqReg;
+
+	const uint64_t fmclk = 25000000;
+
+	FreqReg = AD9833_freq_calc(freq, fmclk);
+	fqlsb = FreqReg & ftmask;
+	fqmsb = (FreqReg >> 14) & ftmask;
+
+	static uint8_t i;
+
+	i = 0;
+
+	fqlsb = fq1maskand & fqlsb;
+	fqlsb = fq1maskor | fqlsb;
+	fqmsb = fq1maskand & fqmsb;
+	fqmsb = fq1maskor | fqmsb;
+
+	Tx_Buff[i] = fqlsb;
+	i++;
+	Tx_Buff[i] = fqmsb;
+}
+
+void HAL_SPI_TxHalfCpltCallback(SPI_HandleTypeDef *hspi) {
+
+// do what you want , par example, un I/O toggle pour voir au scope si c'est ok
+	HAL_GPIO_WritePin(SPI_GPIO_Port, SPI_Pin, 0);
+}
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi) {
+
+// do what you want par example, un I/O toggle pour voir au scope si c'est ok
+	HAL_GPIO_WritePin(SPI_GPIO_Port, SPI_Pin, 1);
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc) {
+	static uint16_t i;
+	i = 0;
+	while (i < BUFF / 2) {
+		AD9833_set_DMA_reg(ADCBUFF[i], SPI_Buff[2 * i]);
+		i++;
 	}
-	HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+	HAL_GPIO_WritePin(ADC_GPIO_Port, ADC_Pin, 1);
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+	static uint16_t i;
+	i = BUFF / 2;
+	while (i < BUFF) {
+		AD9833_set_DMA_reg(ADCBUFF[i], SPI_Buff[2 * i]);
+		i++;
+	}
+	HAL_GPIO_WritePin(ADC_GPIO_Port, ADC_Pin, 0);
 }
 
 /* USER CODE END 0 */
@@ -245,9 +297,10 @@ int main(void) {
 	AD9833_set_DMA(&hspi1, 50.0, 0, 1);
 	HAL_Delay(1);
 	AD9833_set_DMA(&hspi1, 50.0, 0, 1);
-	HAL_ADC_Start_IT(&hadc1);
-	//HAL_ADC_Start_DMA(&hadc1, (uint32_t*) ADVBUFF, BUFF);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+	//HAL_ADC_Start_IT(&hadc1);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*) ADCBUFF, BUFF);
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_ALL);
+	HAL_SPI_Transmit_DMA(&hspi1, SPI_Buff, BUFF);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -321,7 +374,7 @@ static void MX_ADC1_Init(void) {
 	 */
 	hadc1.Instance = ADC1;
 	hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-	hadc1.Init.ContinuousConvMode = ENABLE;
+	hadc1.Init.ContinuousConvMode = DISABLE;
 	hadc1.Init.DiscontinuousConvMode = DISABLE;
 	hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
 	hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
@@ -365,7 +418,7 @@ static void MX_SPI1_Init(void) {
 	hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
 	hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
 	hspi1.Init.NSS = SPI_NSS_HARD_OUTPUT;
-	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+	hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128;
 	hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
 	hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
 	hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -482,12 +535,22 @@ static void MX_GPIO_Init(void) {
 	/*Configure GPIO pin Output Level */
 	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(GPIOB, ADC_Pin | SPI_Pin, GPIO_PIN_SET);
+
 	/*Configure GPIO pin : LED_Pin */
 	GPIO_InitStruct.Pin = LED_Pin;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 	HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
+
+	/*Configure GPIO pins : ADC_Pin SPI_Pin */
+	GPIO_InitStruct.Pin = ADC_Pin | SPI_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 }
 
